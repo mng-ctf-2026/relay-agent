@@ -280,6 +280,73 @@ class BuildDeliveryPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "limit of 1 files"):
                 build_delivery_plan([first, second])
 
+    def test_rejects_an_exhausted_input_iterator(self):
+        source = self.root / "report.pdf"
+        source.touch()
+        paths = iter([source])
+        self.assertEqual(len(build_delivery_plan(paths).files), 1)
+        with self.assertRaisesRegex(ValueError, "At least one file"):
+            build_delivery_plan(paths)
+
+    def test_empty_file_remains_in_the_plan_and_json(self):
+        source = self.root / "empty.pdf"
+        source.touch()
+        plan = build_delivery_plan([source, source])
+        self.assertEqual(plan.files, (PlannedFile(source.resolve(), "empty.pdf", 0),))
+        payload = json.loads(delivery_plan_to_json(plan))
+        self.assertEqual(payload["files"], [{
+            "source": str(source.resolve()), "name": "empty.pdf", "size_bytes": 0,
+        }])
+
+    def test_accepts_duplicates_before_and_after_reaching_the_limit(self):
+        paths = [self.root / f"file-{index}.txt" for index in range(config.MAX_BATCH_FILES)]
+        for path in paths:
+            path.touch()
+        inputs = [paths[0], *paths, *reversed(paths)]
+        plan = build_delivery_plan(iter(inputs))
+        self.assertEqual([item.source for item in plan.files], [path.resolve() for path in paths])
+
+    def test_rejects_a_new_file_after_duplicates_at_the_limit(self):
+        first = self.root / "first.txt"
+        second = self.root / "second.txt"
+        extra = self.root / "extra.txt"
+        for path in (first, second, extra):
+            path.touch()
+        with patch.object(config, "MAX_BATCH_FILES", 2):
+            with self.assertRaisesRegex(ValueError, "limit of 2 files"):
+                build_delivery_plan(iter([first, first, second, second, first, extra]))
+
+    def test_distinct_files_with_equivalent_unicode_names_remain_separate(self):
+        other = self.root / "other"
+        other.mkdir()
+        first = self.root / "cafe\u0301.pdf"
+        second = other / "caf\u00e9.pdf"
+        first.write_bytes(b"first")
+        second.write_bytes(b"second")
+        plan = build_delivery_plan([first, second, first])
+        self.assertEqual([item.name for item in plan.files], ["caf\u00e9.pdf"] * 2)
+        self.assertEqual([item.source for item in plan.files], [first.resolve(), second.resolve()])
+        self.assertEqual([item.size_bytes for item in plan.files], [5, 6])
+        payload = json.loads(delivery_plan_to_json(plan))
+        self.assertEqual([item["name"] for item in payload["files"]], ["caf\u00e9.pdf"] * 2)
+
+    def test_falls_back_to_resolved_paths_when_inode_numbers_are_unavailable(self):
+        first = self.root / "first.txt"
+        second = self.root / "second.txt"
+        metadata = os.stat_result((stat.S_IFREG, 0, 0, 1, 0, 0, 0, 0, 0, 0))
+        with patch.object(Path, "resolve", side_effect=[first, second, first]):
+            with patch.object(Path, "stat", return_value=metadata):
+                plan = build_delivery_plan([first, second, first])
+        self.assertEqual([item.source for item in plan.files], [first, second])
+
+    def test_duplicate_tracking_is_local_to_each_plan(self):
+        source = self.root / "report.pdf"
+        source.write_bytes(b"example")
+        first_plan = build_delivery_plan([source, source])
+        second_plan = build_delivery_plan([source])
+        self.assertEqual(first_plan.files, second_plan.files)
+        self.assertEqual(len(second_plan.files), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
