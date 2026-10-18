@@ -1,0 +1,7 @@
+[project]
+name = "relay-agent"
+version = "0.1.0"
+description = "A lightweight file delivery tool for simple workflows."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
