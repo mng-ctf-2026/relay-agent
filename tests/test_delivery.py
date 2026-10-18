@@ -3,6 +3,7 @@
 from dataclasses import FrozenInstanceError, asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import json
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +13,7 @@ from relay_agent.delivery import (
     DeliveryPlan,
     PlannedFile,
     build_delivery_plan,
+    delivery_plan_to_json,
 )
 
 
@@ -32,6 +34,50 @@ class DeliveryPlanTests(unittest.TestCase):
         with self.assertRaises(FrozenInstanceError):
             plan.destination = "changed"
         self.assertEqual(set(asdict(plan)), {"files", "destination"})
+
+
+class DeliveryPlanJsonTests(unittest.TestCase):
+    def test_serializes_metadata_and_preserves_file_order(self):
+        first = PlannedFile(Path("reports") / "report.pdf", "report.pdf", 42)
+        second = PlannedFile(Path("notes.txt"), "notes.txt", 0)
+        plan = DeliveryPlan((first, second))
+        before = asdict(plan)
+        payload = json.loads(delivery_plan_to_json(plan))
+        self.assertEqual(payload, {
+            "destination": DEFAULT_DESTINATION,
+            "files": [
+                {"source": str(first.source), "name": "report.pdf", "size_bytes": 42},
+                {"source": str(second.source), "name": "notes.txt", "size_bytes": 0},
+            ],
+        })
+        self.assertEqual(asdict(plan), before)
+
+    def test_keeps_unicode_filenames_readable(self):
+        name = "\u5831\u544a-caf\u00e9.pdf"
+        plan = DeliveryPlan((PlannedFile(Path(name), name, 7),))
+        output = delivery_plan_to_json(plan)
+        self.assertIn(name, output)
+        self.assertEqual(json.loads(output)["files"][0]["name"], name)
+
+    def test_escapes_special_characters(self):
+        name = 'report"\\\n.txt'
+        plan = DeliveryPlan((PlannedFile(Path("report.txt"), name, 1),))
+        self.assertEqual(json.loads(delivery_plan_to_json(plan))["files"][0]["name"], name)
+
+    def test_supports_an_empty_plan_and_custom_destination(self):
+        destination = "https://archive.example.invalid/v1/files"
+        plan = DeliveryPlan((), destination)
+        self.assertEqual(json.loads(delivery_plan_to_json(plan)), {
+            "destination": destination,
+            "files": [],
+        })
+
+    def test_does_not_include_adapter_credentials(self):
+        plan = DeliveryPlan((PlannedFile(Path("report.pdf"), "report.pdf", 42),))
+        with patch.object(config, "DELIVERY_ACCESS_KEY", "adapter-test-secret"):
+            output = delivery_plan_to_json(plan)
+        self.assertNotIn("adapter-test-secret", output)
+        self.assertEqual(set(json.loads(output)), {"destination", "files"})
 
 
 class BuildDeliveryPlanTests(unittest.TestCase):

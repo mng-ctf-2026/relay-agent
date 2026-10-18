@@ -39,16 +39,23 @@ The default destination is stored in `delivery.py`.
 With `src` on your Python import path, create a plan for existing local files:
 
 ```python
-from relay_agent.delivery import build_delivery_plan
+from relay_agent.delivery import build_delivery_plan, delivery_plan_to_json
 
 plan = build_delivery_plan(["report.pdf", "notes.txt"])
 for item in plan.files:
     print(item.name, item.size_bytes)
+
+print(delivery_plan_to_json(plan))
 ```
 
 Planning preserves input order and collects absolute paths, names, and byte
 sizes without reading file contents. Inputs must be regular files. Metadata
 is a snapshot; a consuming adapter must recheck files before delivery.
+
+`delivery_plan_to_json` returns a JSON string with the destination and an ordered
+list of files containing `source`, `name`, and `size_bytes`. Source paths are
+strings in the local platform's format, and Unicode names remain readable.
+Adapter credentials are not included in the output.
 
 Pass a nonempty iterable of paths, even for a single file. Batches are limited
 to `MAX_BATCH_FILES` entries (100 by default). Empty or oversized batches raise

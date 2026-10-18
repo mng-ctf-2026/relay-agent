@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from collections.abc import Iterable
 from pathlib import Path
+import json
 import stat
 import unicodedata
 
@@ -51,3 +52,23 @@ def build_delivery_plan(paths: Iterable[str | Path]) -> DeliveryPlan:
     if not files:
         raise ValueError("At least one file is required")
     return DeliveryPlan(tuple(files))
+
+
+def delivery_plan_to_json(plan: DeliveryPlan) -> str:
+    """Serialize delivery metadata as JSON, preserving Unicode filenames.
+
+    Source paths use the local platform's spelling. This only returns a string;
+    it does not access files or contact the destination.
+    """
+    payload = {
+        "destination": plan.destination,
+        "files": [
+            {
+                "source": str(item.source),
+                "name": item.name,
+                "size_bytes": item.size_bytes,
+            }
+            for item in plan.files
+        ],
+    }
+    return json.dumps(payload, ensure_ascii=False)
