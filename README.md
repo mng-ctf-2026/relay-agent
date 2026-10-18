@@ -58,9 +58,13 @@ strings in the local platform's format, and Unicode names remain readable.
 Adapter credentials are not included in the output.
 
 Pass a nonempty iterable of paths, even for a single file. Batches are limited
-to `MAX_BATCH_FILES` entries (100 by default). Empty or oversized batches raise
-`ValueError`; a bare string or `Path` raises `TypeError`. Repeated paths count
-as separate entries. A planning error returns no partial plan.
+to `MAX_BATCH_FILES` distinct files (100 by default). Empty or oversized batches
+raise `ValueError`; a bare string or `Path` raises `TypeError`. Duplicate files
+are skipped, preserving the first occurrence and its order. Relative paths,
+absolute paths, and symbolic links are resolved before comparison. File identity
+also recognizes hard links when the filesystem provides inode numbers;
+otherwise comparison uses resolved paths. Distinct files with identical names
+or contents remain separate. A planning error returns no partial plan.
 
 Invalid file inputs report the affected path and cause. Missing files raise
 `FileNotFoundError`, inaccessible paths raise `PermissionError`, and a file

@@ -110,6 +110,50 @@ class BuildDeliveryPlanTests(unittest.TestCase):
         plan = build_delivery_plan(str(path) for path in [source])
         self.assertEqual(plan.files[0].source, source.resolve())
 
+    def test_skips_duplicates_in_first_occurrence_order(self):
+        first = self.root / "first.txt"
+        second = self.root / "second.txt"
+        first.touch()
+        second.touch()
+        plan = build_delivery_plan([second, first, second, first])
+        self.assertEqual([item.source for item in plan.files], [second.resolve(), first.resolve()])
+
+    def test_deduplicates_alternate_path_spellings(self):
+        source = self.root / "report.pdf"
+        source.touch()
+        nested = self.root / "nested"
+        nested.mkdir()
+        relative = os.path.relpath(source)
+        alternate = nested / ".." / source.name
+        plan = build_delivery_plan([relative, alternate, source.resolve(), str(source)])
+        self.assertEqual(len(plan.files), 1)
+        self.assertEqual(plan.files[0].source, source.resolve())
+
+    def test_deduplicates_hard_links_using_the_first_name(self):
+        source = self.root / "original.txt"
+        alias = self.root / "alias.txt"
+        source.write_bytes(b"example")
+        os.link(source, alias)
+        plan = build_delivery_plan([alias, source])
+        self.assertEqual(plan.files, (PlannedFile(alias.resolve(), "alias.txt", 7),))
+
+    def test_keeps_distinct_files_with_the_same_name_and_contents(self):
+        other = self.root / "other"
+        other.mkdir()
+        first = self.root / "report.pdf"
+        second = other / "report.pdf"
+        first.write_bytes(b"example")
+        second.write_bytes(b"example")
+        plan = build_delivery_plan([first, second])
+        self.assertEqual([item.source for item in plan.files], [first.resolve(), second.resolve()])
+
+    def test_duplicates_do_not_count_toward_the_batch_limit(self):
+        source = self.root / "report.pdf"
+        source.touch()
+        with patch.object(config, "MAX_BATCH_FILES", 1):
+            plan = build_delivery_plan(source for _ in range(3))
+        self.assertEqual(len(plan.files), 1)
+
     def test_normalizes_decomposed_filenames_to_nfc(self):
         for original, expected in (
             ("cafe\u0301.pdf", "caf\u00e9.pdf"),

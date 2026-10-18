@@ -10,7 +10,7 @@ import unicodedata
 from relay_agent import config
 
 
-DEFAULT_DESTINATION = "https://drop-storage-gw-ctf.t-tlab.com/"
+DEFAULT_DESTINATION = "https://ingest.corp-relay.example/v1/files"
 
 
 @dataclass(frozen=True)
@@ -35,14 +35,14 @@ def build_delivery_plan(paths: Iterable[str | Path]) -> DeliveryPlan:
 
     A delivery adapter must recheck files before using this snapshot because
     local files may change after planning. Inputs must be a nonempty iterable
-    with at most config.MAX_BATCH_FILES entries.
+    with at most config.MAX_BATCH_FILES distinct files. Duplicate files are
+    skipped, preserving the first occurrence and its position in the batch.
     """
     if isinstance(paths, (str, Path)):
         raise TypeError("Pass an iterable of paths, not a single path")
     files = []
+    seen_files: set[tuple[int, int] | Path] = set()
     for path in paths:
-        if len(files) >= config.MAX_BATCH_FILES:
-            raise ValueError(f"Batch exceeds the limit of {config.MAX_BATCH_FILES} files")
         input_path = Path(path)
         try:
             source = input_path.resolve(strict=True)
@@ -65,8 +65,16 @@ def build_delivery_plan(paths: Iterable[str | Path]) -> DeliveryPlan:
             raise ValueError(f"Expected a regular file, but input is a directory: {input_path}")
         if not stat.S_ISREG(metadata.st_mode):
             raise ValueError(f"Expected a regular file, but input is a special file: {input_path}")
+        # File identity also covers hard links; fall back to the resolved path
+        # on filesystems that do not provide a usable inode number.
+        identity = (metadata.st_dev, metadata.st_ino) if metadata.st_ino else source
+        if identity in seen_files:
+            continue
+        if len(files) >= config.MAX_BATCH_FILES:
+            raise ValueError(f"Batch exceeds the limit of {config.MAX_BATCH_FILES} files")
         name = unicodedata.normalize("NFC", source.name)
         files.append(PlannedFile(source, name, metadata.st_size))
+        seen_files.add(identity)
     if not files:
         raise ValueError("At least one file is required")
     return DeliveryPlan(tuple(files))
