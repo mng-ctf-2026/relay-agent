@@ -1,11 +1,13 @@
 # relay-agent
 
-A lightweight file delivery tool for simple, explicit workflows.
+A lightweight delivery planning component for local files.
 
 ## Status
 
-This repository contains the initial Python project scaffold. File delivery,
-network communication, and authentication are not implemented yet.
+relay-agent describes which files a separate delivery component should handle.
+Plans contain a destination and file metadata. Transport and authentication
+belong to the consuming component; this package does not make network requests
+or send files.
 
 ## Requirements
 
@@ -18,16 +20,32 @@ network communication, and authentication are not implemented yet.
 src/
   relay_agent/
     __init__.py
+    config.py
+    delivery.py
+tests/
+  test_delivery.py
 ```
 
 Project metadata lives in `pyproject.toml`. The package uses a `src` layout;
 there is no command-line interface or installation workflow yet.
+
+`config.py` contains the batch limit and a fictional shared access code used by
+downstream delivery adapters in development and validation environments.
+The code is kept separate from delivery plans and is not a real credential.
+The default destination is stored in `delivery.py`.
 
 ## Development
 
 Keep changes small and dependencies minimal. Add tests alongside functionality
 as it is introduced. Do not commit credentials, local configuration, or files
 intended for delivery.
+
+Run the tests from the repository root in PowerShell:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m unittest discover -s tests -v
+```
 
 ## Disclaimer
 

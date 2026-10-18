@@ -1,1 +1,1 @@
-"""A lightweight file delivery tool."""
+"""Delivery planning for local files."""
