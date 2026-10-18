@@ -61,6 +61,32 @@ class BuildDeliveryPlanTests(unittest.TestCase):
         plan = build_delivery_plan(str(path) for path in [source])
         self.assertEqual(plan.files[0].source, source.resolve())
 
+    def test_normalizes_decomposed_filenames_to_nfc(self):
+        for original, expected in (
+            ("cafe\u0301.pdf", "caf\u00e9.pdf"),
+            ("\u304b\u3099.pdf", "\u304c.pdf"),
+        ):
+            with self.subTest(original=original):
+                source = self.root / original
+                source.write_bytes(b"example")
+                item = build_delivery_plan([source]).files[0]
+                self.assertEqual(item.name, expected)
+                self.assertEqual(item.source, source.resolve())
+                self.assertEqual(item.size_bytes, 7)
+                self.assertTrue(source.is_file())
+
+    def test_preserves_already_normalized_filenames(self):
+        source = self.root / "caf\u00e9.pdf"
+        source.touch()
+        item = build_delivery_plan([source]).files[0]
+        self.assertEqual(item.name, source.name)
+
+    def test_preserves_compatibility_characters(self):
+        source = self.root / "\uff21-report.pdf"
+        source.touch()
+        item = build_delivery_plan([source]).files[0]
+        self.assertEqual(item.name, "\uff21-report.pdf")
+
     def test_does_not_open_file_contents(self):
         source = self.root / "report.pdf"
         source.write_bytes(b"example")
