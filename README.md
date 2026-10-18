@@ -50,6 +50,11 @@ Planning preserves input order and collects absolute paths, names, and byte
 sizes without reading file contents. Inputs must be regular files. Metadata
 is a snapshot; a consuming adapter must recheck files before delivery.
 
+Pass a nonempty iterable of paths, even for a single file. Batches are limited
+to `MAX_BATCH_FILES` entries (100 by default). Empty or oversized batches raise
+`ValueError`; a bare string or `Path` raises `TypeError`. Repeated paths count
+as separate entries. A planning error returns no partial plan.
+
 ## Development
 
 Keep changes small and dependencies minimal. Add tests alongside functionality

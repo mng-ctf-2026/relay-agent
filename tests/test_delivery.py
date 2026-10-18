@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from relay_agent import config
 from relay_agent.delivery import (
     DEFAULT_DESTINATION,
     DeliveryPlan,
@@ -74,6 +75,43 @@ class BuildDeliveryPlanTests(unittest.TestCase):
     def test_rejects_a_missing_file(self):
         with self.assertRaises(FileNotFoundError):
             build_delivery_plan([self.root / "missing.pdf"])
+
+    def test_rejects_an_empty_batch(self):
+        with self.assertRaisesRegex(ValueError, "At least one file"):
+            build_delivery_plan([])
+
+    def test_rejects_an_empty_iterator(self):
+        with self.assertRaisesRegex(ValueError, "At least one file"):
+            build_delivery_plan(iter(()))
+
+    def test_rejects_a_single_path_instead_of_a_batch(self):
+        for value in ("report.pdf", self.root / "report.pdf"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(TypeError, "iterable of paths"):
+                    build_delivery_plan(value)
+
+    def test_accepts_a_batch_at_the_limit(self):
+        paths = [self.root / f"file-{index}.txt" for index in range(config.MAX_BATCH_FILES)]
+        for path in paths:
+            path.touch()
+        self.assertEqual(len(build_delivery_plan(iter(paths)).files), config.MAX_BATCH_FILES)
+
+    def test_rejects_a_batch_above_the_limit(self):
+        paths = [self.root / f"file-{index}.txt" for index in range(config.MAX_BATCH_FILES + 1)]
+        for path in paths:
+            path.touch()
+        with self.assertRaisesRegex(ValueError, "Batch exceeds the limit"):
+            build_delivery_plan(iter(paths))
+
+    def test_uses_the_configured_batch_limit(self):
+        first = self.root / "first.txt"
+        second = self.root / "second.txt"
+        first.touch()
+        second.touch()
+        with patch.object(config, "MAX_BATCH_FILES", 1):
+            self.assertEqual(len(build_delivery_plan([first]).files), 1)
+            with self.assertRaisesRegex(ValueError, "limit of 1 files"):
+                build_delivery_plan([first, second])
 
 
 if __name__ == "__main__":
