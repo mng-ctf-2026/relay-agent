@@ -43,10 +43,28 @@ def build_delivery_plan(paths: Iterable[str | Path]) -> DeliveryPlan:
     for path in paths:
         if len(files) >= config.MAX_BATCH_FILES:
             raise ValueError(f"Batch exceeds the limit of {config.MAX_BATCH_FILES} files")
-        source = Path(path).resolve(strict=True)
-        metadata = source.stat()
+        input_path = Path(path)
+        try:
+            source = input_path.resolve(strict=True)
+            metadata = source.stat()
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                exc.errno, "Input file does not exist", str(input_path)
+            ) from exc
+        except NotADirectoryError as exc:
+            raise NotADirectoryError(
+                exc.errno, "A parent component of the input path is not a directory",
+                str(input_path),
+            ) from exc
+        except PermissionError as exc:
+            raise PermissionError(
+                exc.errno, "Permission denied while inspecting input file",
+                str(input_path),
+            ) from exc
+        if stat.S_ISDIR(metadata.st_mode):
+            raise ValueError(f"Expected a regular file, but input is a directory: {input_path}")
         if not stat.S_ISREG(metadata.st_mode):
-            raise ValueError(f"Expected a regular file: {source}")
+            raise ValueError(f"Expected a regular file, but input is a special file: {input_path}")
         name = unicodedata.normalize("NFC", source.name)
         files.append(PlannedFile(source, name, metadata.st_size))
     if not files:

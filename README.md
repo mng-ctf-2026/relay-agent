@@ -62,6 +62,12 @@ to `MAX_BATCH_FILES` entries (100 by default). Empty or oversized batches raise
 `ValueError`; a bare string or `Path` raises `TypeError`. Repeated paths count
 as separate entries. A planning error returns no partial plan.
 
+Invalid file inputs report the affected path and cause. Missing files raise
+`FileNotFoundError`, inaccessible paths raise `PermissionError`, and a file
+used as a parent directory raises `NotADirectoryError` when reported by the
+operating system. These errors retain their original cause and error number.
+Directories and special files raise `ValueError` with a specific explanation.
+
 ## Development
 
 Keep changes small and dependencies minimal. Add tests alongside functionality

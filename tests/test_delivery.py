@@ -4,6 +4,9 @@ from dataclasses import FrozenInstanceError, asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
+import errno
+import os
+import stat
 import unittest
 from unittest.mock import patch
 
@@ -141,12 +144,60 @@ class BuildDeliveryPlanTests(unittest.TestCase):
         self.assertEqual(plan.files[0].size_bytes, 7)
 
     def test_rejects_a_directory(self):
-        with self.assertRaisesRegex(ValueError, "Expected a regular file"):
+        with self.assertRaisesRegex(ValueError, "Expected a regular file") as caught:
             build_delivery_plan([self.root])
+        self.assertIn("input is a directory", str(caught.exception))
+        self.assertIn(str(self.root), str(caught.exception))
 
     def test_rejects_a_missing_file(self):
-        with self.assertRaises(FileNotFoundError):
-            build_delivery_plan([self.root / "missing.pdf"])
+        source = self.root / "missing.pdf"
+        with self.assertRaisesRegex(FileNotFoundError, "Input file does not exist") as caught:
+            build_delivery_plan([source])
+        self.assertEqual(caught.exception.filename, str(source))
+        self.assertEqual(caught.exception.errno, errno.ENOENT)
+        self.assertIsInstance(caught.exception.__cause__, FileNotFoundError)
+
+    def test_explains_permission_errors_during_resolution_or_stat(self):
+        source = self.root / "restricted.pdf"
+        source.touch()
+        for operation in ("resolve", "stat"):
+            with self.subTest(operation=operation):
+                error = PermissionError(errno.EACCES, "Access denied")
+                with patch.object(Path, operation, side_effect=error):
+                    with self.assertRaisesRegex(PermissionError, "Permission denied while inspecting") as caught:
+                        build_delivery_plan([source])
+                self.assertEqual(caught.exception.filename, str(source))
+                self.assertEqual(caught.exception.errno, errno.EACCES)
+                self.assertIs(caught.exception.__cause__, error)
+
+    def test_explains_a_non_directory_parent(self):
+        source = self.root / "report.pdf" / "child.txt"
+        error = NotADirectoryError(errno.ENOTDIR, "Not a directory")
+        with patch.object(Path, "resolve", side_effect=error):
+            with self.assertRaisesRegex(NotADirectoryError, "parent component.*not a directory") as caught:
+                build_delivery_plan([source])
+        self.assertEqual(caught.exception.filename, str(source))
+        self.assertEqual(caught.exception.errno, errno.ENOTDIR)
+        self.assertIs(caught.exception.__cause__, error)
+
+    def test_explains_special_file_rejection(self):
+        source = self.root / "input.pipe"
+        metadata = os.stat_result((stat.S_IFIFO, 0, 0, 1, 0, 0, 0, 0, 0, 0))
+        with patch.object(Path, "resolve", return_value=source):
+            with patch.object(Path, "stat", return_value=metadata):
+                with self.assertRaisesRegex(ValueError, "input is a special file") as caught:
+                    build_delivery_plan([source])
+        self.assertIn(str(source), str(caught.exception))
+
+    def test_explains_a_file_disappearing_after_resolution(self):
+        source = self.root / "removed.pdf"
+        error = FileNotFoundError(errno.ENOENT, "No such file")
+        with patch.object(Path, "resolve", return_value=source):
+            with patch.object(Path, "stat", side_effect=error):
+                with self.assertRaisesRegex(FileNotFoundError, "Input file does not exist") as caught:
+                    build_delivery_plan([source])
+        self.assertEqual(caught.exception.filename, str(source))
+        self.assertIs(caught.exception.__cause__, error)
 
     def test_rejects_an_empty_batch(self):
         with self.assertRaisesRegex(ValueError, "At least one file"):
