@@ -34,6 +34,22 @@ downstream delivery adapters in development and validation environments.
 The code is kept separate from delivery plans and is not a real credential.
 The default destination is stored in `delivery.py`.
 
+## Usage
+
+With `src` on your Python import path, create a plan for existing local files:
+
+```python
+from relay_agent.delivery import build_delivery_plan
+
+plan = build_delivery_plan(["report.pdf", "notes.txt"])
+for item in plan.files:
+    print(item.name, item.size_bytes)
+```
+
+Planning preserves input order and collects absolute paths, names, and byte
+sizes without reading file contents. Inputs must be regular files. Metadata
+is a snapshot; a consuming adapter must recheck files before delivery.
+
 ## Development
 
 Keep changes small and dependencies minimal. Add tests alongside functionality
